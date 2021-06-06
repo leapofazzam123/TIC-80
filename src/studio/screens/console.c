@@ -40,12 +40,6 @@
 #include <lauxlib.h>
 #include <lualib.h>
 
-#if defined(__TIC_WINDOWS__)
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
-
 #include <sys/stat.h>
 
 #if defined(__EMSCRIPTEN__)
@@ -1756,37 +1750,6 @@ static void exportSprites(Console* console, const char* filename, tic_tile* base
     }
 }
 
-static void *ticMemmem(const void* haystack, size_t hlen, const void* needle, size_t nlen)
-{
-    const u8* p = haystack;
-    size_t plen = hlen;
-
-    if(!nlen) return NULL;
-
-    s32 needle_first = *(u8*)needle;
-
-    while (plen >= nlen && (p = memchr(p, needle_first, plen - nlen + 1)))
-    {
-        if (!memcmp(p, needle, nlen))
-        return (void *)p;
-
-        p++;
-        plen = hlen - (p - (const u8*)haystack);
-    }
-
-    return NULL;
-}
-
-static const char TicCartSig[] = "TIC.CART";
-#define SIG_SIZE STRLEN(TicCartSig)
-
-typedef struct
-{
-    u8 sig[SIG_SIZE];
-    s32 appSize;
-    s32 cartSize;
-} EmbedHeader;
-
 static void* embedCart(Console* console, u8* app, s32* size)
 {
     tic_mem* tic = console->tic;
@@ -1812,7 +1775,7 @@ static void* embedCart(Console* console, u8* app, s32* size)
                     .cartSize = zipSize,
                 };
 
-                memcpy(header.sig, TicCartSig, SIG_SIZE);
+                memcpy(header.sig, CART_SIG, STRLEN(CART_SIG));
 
                 s32 finalSize = appSize + sizeof header + header.cartSize;
                 data = malloc(finalSize);
@@ -3574,9 +3537,11 @@ static void tick(Console* console)
     processMouse(console);
     processKeyboard(console);
 
+    Start* start = getStartScreen();
+
     if(console->tickCounter == 0)
     {
-        if(!console->embed.yes)
+        if(!start->embed.yes)
         {
             loadDemo(console, 0);
 
@@ -3600,20 +3565,20 @@ static void tick(Console* console)
     tic_api_cls(tic, TIC_COLOR_BG);
     drawConsoleText(console);
 
-    if(console->embed.yes)
+    if(start->embed.yes)
     {
         if(console->tickCounter >= (u32)(console->args.skip ? 1 : TIC80_FRAMERATE))
         {
             if(!console->args.skip)
                 console->showGameMenu = true;
 
-            memcpy(&tic->cart, console->embed.file, sizeof(tic_cartridge));
+            memcpy(&tic->cart, start->embed.file, sizeof(tic_cartridge));
 
             tic_api_reset(tic);
 
             setStudioMode(TIC_RUN_MODE);
 
-            console->embed.yes = false;
+            start->embed.yes = false;
             studioRomLoaded();
 
             printLine(console);
@@ -3656,6 +3621,7 @@ static bool cmdLoadCart(Console* console, const char* path)
 
     if(data)
     {
+        Start* start = getStartScreen();
         const char* cartName = NULL;
         
         {
@@ -3668,8 +3634,8 @@ static bool cmdLoadCart(Console* console, const char* path)
 
         if(tic_project_ext(cartName))
         {
-            if(tic_project_load(cartName, data, size, console->embed.file))
-                done = console->embed.yes = true;
+            if(tic_project_load(cartName, data, size, start->embed.file))
+                done = start->embed.yes = true;
         }
         else if(tic_tool_has_ext(cartName, PngExt))
         {
@@ -3677,16 +3643,16 @@ static bool cmdLoadCart(Console* console, const char* path)
 
             if(cart)
             {
-                memcpy(console->embed.file, cart, sizeof(tic_cartridge));
+                memcpy(start->embed.file, cart, sizeof(tic_cartridge));
                 free(cart);
-                done = console->embed.yes = true;
+                done = start->embed.yes = true;
             }
         }
         else if(tic_tool_has_ext(cartName, CART_EXT))
         {
             tic_mem* tic = console->tic;
-            tic_cart_load(console->embed.file, data, size);
-            done = console->embed.yes = true;
+            tic_cart_load(start->embed.file, data, size);
+            done = start->embed.yes = true;
         }
         
         free(data);
@@ -3709,7 +3675,6 @@ void initConsole(Console* console, tic_mem* tic, tic_fs* fs, tic_net* net, Confi
 {
     if(!console->text)          console->text = malloc(CONSOLE_BUFFER_SIZE);
     if(!console->color)         console->color = malloc(CONSOLE_BUFFER_SIZE);
-    if(!console->embed.file)    console->embed.file = newCart();
     if(!console->desc)          console->desc = malloc(sizeof(CommandDesc));
 
     *console = (Console)
@@ -3725,11 +3690,6 @@ void initConsole(Console* console, tic_mem* tic, tic_fs* fs, tic_net* net, Confi
         .save = saveCart,
         .done = commandDone,
         .cursor = {.pos.x = 1, .pos.y = 3, .delay = 0},
-        .embed =
-        {
-            .yes = false,
-            .file = console->embed.file,
-        },
         .input = console->text,
         .tickCounter = 0,
         .active = false,
@@ -3749,9 +3709,10 @@ void initConsole(Console* console, tic_mem* tic, tic_fs* fs, tic_net* net, Confi
     memset(console->color, TIC_COLOR_BG, CONSOLE_BUFFER_SIZE);
     memset(console->desc, 0, sizeof(CommandDesc));
 
+    Start* start = getStartScreen();
+
     if(!console->args.cli)
     {
-        Start* start = getStartScreen();
 
         memcpy(console->text, start->text, STUDIO_TEXT_BUFFER_SIZE);
         memcpy(console->color, start->color, STUDIO_TEXT_BUFFER_SIZE);
@@ -3763,85 +3724,20 @@ void initConsole(Console* console, tic_mem* tic, tic_fs* fs, tic_net* net, Confi
                 puts(ptr);
     }
 
-    if(args.cart)
-        if(!cmdLoadCart(console, args.cart))
+    if (args.cart)
+        if (!cmdLoadCart(console, args.cart))
         {
             printf("error: cart `%s` not loaded\n", args.cart);
             exit(1);
         }
 
-    if(!console->embed.yes)
-    {
-        char appPath[TICNAME_MAX];
-
-#if defined(__TIC_WINDOWS__)
-        {
-            wchar_t wideAppPath[TICNAME_MAX];
-            GetModuleFileNameW(NULL, wideAppPath, sizeof wideAppPath);
-            WideCharToMultiByte(CP_UTF8, 0, wideAppPath, COUNT_OF(wideAppPath), appPath, COUNT_OF(appPath), 0, 0);
-        }
-#elif defined(__TIC_LINUX__)
-        s32 size = readlink("/proc/self/exe", appPath, sizeof appPath);
-        appPath[size] = '\0';
-#elif defined(__TIC_MACOSX__)
-        s32 size = sizeof appPath;
-        _NSGetExecutablePath(appPath, &size);
-#endif
-
-        s32 appSize = 0;
-        u8* app = fs_read(appPath, &appSize);
-
-        if(app)
-        {
-            s32 size = appSize;
-            const u8* ptr = app;
-
-            while(true)
-            {
-                const EmbedHeader* header = (const EmbedHeader*)ticMemmem(ptr, size, TicCartSig, SIG_SIZE);
-
-                if(header)
-                {
-                    if(appSize == header->appSize + sizeof(EmbedHeader) + header->cartSize)
-                    {
-                        u8* data = calloc(1, sizeof(tic_cartridge));
-
-                        if(data)
-                        {
-                            s32 dataSize = tic_tool_unzip(data, sizeof(tic_cartridge), app + header->appSize + sizeof(EmbedHeader), header->cartSize);
-
-                            if(dataSize)
-                            {
-                                tic_cart_load(console->embed.file, data, dataSize);
-                                console->embed.yes = true;
-                            }
-                            
-                            free(data);
-                        }
-
-                        break;
-                    }
-                    else
-                    {
-                        ptr = (const u8*)header + SIG_SIZE;
-                        size = appSize - (s32)(ptr - app);
-                    }
-                }
-                else break;
-            }
-
-            free(app);
-        }
-    }
-
-    console->active = !console->embed.yes;
+    console->active = !start->embed.yes;
 }
 
 void freeConsole(Console* console)
 {
     free(console->text);
     free(console->color);
-    free(console->embed.file);
 
     if(console->history.items)
     {

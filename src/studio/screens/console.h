@@ -78,12 +78,6 @@ struct Console
         bool active;
     } select;
 
-    struct
-    {
-        bool yes;
-        tic_cartridge* file;
-    } embed;
-
     char* text;
     u8* color;
 
