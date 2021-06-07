@@ -61,7 +61,7 @@ else()
     set(BUILD_PLAYER_DEFAULT ON)
 endif()
 
-set(BUILD_DEPRECATED TRUE)
+set(BUILD_DEPRECATED FALSE)
 
 set(BUILD_TOUCH_INPUT_DEFAULT ${ANDROID})
 
@@ -962,6 +962,64 @@ if(N3DS)
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/build
     )
 endif()
+
+################################
+# TIC-80 stub
+################################
+
+if(BUILD_SDL AND NOT ANDROID)
+
+    set(TIC80_SRC 
+        src/system/sdl/main.c
+        src/studio/screens/run.c
+        src/studio/screens/menu.c
+        src/studio/screens/start.c
+        src/studio/fs.c
+        src/ext/md5.c
+        src/ext/png.c
+        src/stub.c)
+
+    if(WIN32)
+        
+        configure_file("${PROJECT_SOURCE_DIR}/build/windows/tic80.rc.in" "${PROJECT_SOURCE_DIR}/build/windows/tic80stub.rc")
+        set(TIC80_SRC ${TIC80_SRC} "${PROJECT_SOURCE_DIR}/build/windows/tic80stub.rc")
+
+        add_executable(tic80stub ${SYSTEM_TYPE} ${TIC80_SRC})
+
+        target_include_directories(tic80stub PRIVATE ${THIRDPARTY_DIR}/dirent/include)
+    else()
+        add_executable(tic80stub ${TIC80_SRC})
+    endif()
+
+    target_include_directories(tic80stub PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
+    if(MINGW)
+        target_link_libraries(tic80stub mingw32)
+        target_link_options(tic80stub PRIVATE -static -mconsole)
+    endif()
+
+    if(NOT EMSCRIPTEN)
+        target_link_libraries(tic80stub SDL2main)
+    endif()
+
+    target_link_libraries(tic80stub tic80core png)
+
+    if(BUILD_SDLGPU)
+        target_link_libraries(tic80stub sdlgpu)
+    else()
+        if(EMSCRIPTEN)
+        elseif(RPI)
+            target_link_libraries(tic80stub libSDL2.a bcm_host)
+        else()
+            target_link_libraries(tic80stub SDL2-static)
+        endif()
+    endif()
+
+endif()
+
+################################
+# Install
+################################
 
 set(CPACK_PACKAGE_NAME "TIC-80")
 set(CPACK_PACKAGE_VENDOR "Nesbox")
