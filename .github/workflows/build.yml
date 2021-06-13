@@ -294,8 +294,10 @@ jobs:
     - name: Build
       run: |
         cd build/android
-        ./gradlew assembleRelease
-        cp app/build/outputs/apk/universal/release/app-universal-release.apk tic80.apk
+        #./gradlew assembleRelease
+        cmake -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DBUILD_PRO=On ..
+        cmake --build . --config $BUILD_TYPE --parallel
+        #cp app/build/outputs/apk/universal/release/app-universal-release.apk tic80.apk
 
     - name: Deploy
       uses: actions/upload-artifact@v2
