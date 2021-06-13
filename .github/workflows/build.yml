@@ -282,8 +282,8 @@ jobs:
 
 # === Android ===
   android:
-    runs-on: ubuntu-latest
-    container: gradle:latest
+    runs-on: ubuntu-20.04
+    container: nesbox/android-tic80:latest
 
     steps:
     - uses: actions/checkout@v2
