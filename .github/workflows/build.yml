@@ -295,6 +295,7 @@ jobs:
       run: |
         cd build/android
         #./gradlew assembleRelease
+        sudo apt update
         sudo apt install build-essential cmake
         cmake -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DBUILD_PRO=On ../..
         cmake --build . --config $BUILD_TYPE --parallel
